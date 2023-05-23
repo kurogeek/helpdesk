@@ -11,7 +11,7 @@ class HDArticle(Document):
 	@staticmethod
 	def get_list_query(query):
 		QBArticle = DocType("HD Article")
-		QBCategory = DocType("Category")
+		QBCategory = DocType("HD Article Category")
 
 		query = (
 			query.where(QBArticle.status != "Archived")
@@ -64,7 +64,7 @@ class HDArticle(Document):
 
 	def get_breadcrumbs(self):
 		breadcrumbs = [{"name": self.name, "label": self.title}]
-		current_category = frappe.get_doc("Category", self.category)
+		current_category = frappe.get_doc("HD Article Category", self.category)
 		breadcrumbs.append(
 			{"name": current_category.name, "label": current_category.category_name}
 		)
