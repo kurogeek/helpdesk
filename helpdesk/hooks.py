@@ -64,4 +64,7 @@ doc_events = {
 		),
 		"on_trash": "helpdesk.helpdesk.doctype.hd_customer.hd_customer.get_ticket_count",
 	},
+    "Customer": {
+        "after_insert": "helpdesk.helpdesk.hooks.customer.on_customer_create",
+	},
 }
