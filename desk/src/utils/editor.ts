@@ -12,5 +12,5 @@ export function strip(content: string) {
  * with empty strings.
  */
 export function isEmpty(content: string) {
-    return isEmpty_(strip(content).trim());
+	return isEmpty_(strip(content).trim());
 }

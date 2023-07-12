@@ -16,7 +16,6 @@ from frappe.model.document import Document
 from frappe.model.mapper import get_mapped_doc
 from frappe.query_builder import Case, DocType, Order
 from frappe.query_builder.functions import Count
-from frappe.realtime import get_website_room
 from frappe.utils import date_diff, get_datetime, now_datetime, time_diff_in_seconds
 from frappe.utils.user import is_website_user
 
@@ -27,8 +26,7 @@ from helpdesk.helpdesk.utils.email import (
 	default_outgoing_email_account,
 	default_ticket_outgoing_email_account,
 )
-
-from helpdesk.utils import publish_event
+from helpdesk.utils import publish_event, capture_event
 
 
 class HDTicket(Document):
@@ -114,6 +112,7 @@ class HDTicket(Document):
 
 	def publish_update(self):
 		publish_event("helpdesk:ticket-update", {"name": self.name})
+		capture_event("ticket_updated")
 
 	def autoname(self):
 		return self.name
@@ -133,6 +132,7 @@ class HDTicket(Document):
 
 	def after_insert(self):
 		log_ticket_activity(self.name, "created")
+		capture_event("ticket_created")
 
 	def on_update(self):
 		self.handle_ticket_activity_update()
@@ -189,7 +189,6 @@ class HDTicket(Document):
 			ticket_type_doc = frappe.get_doc("HD Ticket Type", self.ticket_type)
 			if ticket_type_doc.priority:
 				self.priority = ticket_type_doc.priority
-				self.save()
 
 	def set_contact(self, email_id, save=False):
 		import email.utils
@@ -439,6 +438,8 @@ class HDTicket(Document):
 		self.status = "Replied"
 		self.save()
 
+		capture_event("agent_replied")
+
 		if skip_email_workflow:
 			return
 
@@ -494,6 +495,40 @@ class HDTicket(Document):
 			)
 		except Exception as e:
 			frappe.throw(_(e))
+
+	@frappe.whitelist()
+	def create_communication_via_contact(self, message, attachments=[]):
+		ticket_doc = frappe.get_doc("HD Ticket", self.name)
+
+		if ticket_doc.status == "Replied":
+			ticket_doc.status = "Open"
+			log_ticket_activity(self.name, f"status set to Open")
+			ticket_doc.save(ignore_permissions=True)
+
+		communication = frappe.new_doc("Communication")
+		communication.update(
+			{
+				"communication_type": "Communication",
+				"communication_medium": "Email",
+				"sent_or_received": "Received",
+				"email_status": "Open",
+				"subject": "Re: " + ticket_doc.subject,
+				"sender": ticket_doc.raised_by,
+				"content": message,
+				"status": "Linked",
+				"reference_doctype": "HD Ticket",
+				"reference_name": ticket_doc.name,
+			}
+		)
+		communication.ignore_permissions = True
+		communication.ignore_mandatory = True
+		communication.save(ignore_permissions=True)
+
+		for attachment in attachments:
+			file_doc = frappe.get_doc("File", attachment)
+			file_doc.attached_to_name = communication.name
+			file_doc.attached_to_doctype = "Communication"
+			file_doc.save(ignore_permissions=True)
 
 	@frappe.whitelist()
 	def mark_seen(self):
@@ -624,6 +659,22 @@ class HDTicket(Document):
 			i["sender"] = frappe.get_doc("User", i.commented_by)
 
 		return l
+
+	@frappe.whitelist()
+	def reopen(self):
+		if self.status != "Resolved":
+			frappe.throw(_("Only resolved tickets can be reopened"))
+
+		self.status = "Open"
+		self.save()
+
+	@frappe.whitelist()
+	def resolve(self):
+		if self.status == "Closed":
+			frappe.throw(_("Closed tickets cannot be resolved"))
+
+		self.status = "Resolved"
+		self.save()
 
 
 def set_descritption_from_communication(doc, type):

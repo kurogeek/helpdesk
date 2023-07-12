@@ -20,13 +20,16 @@ export const useConfigStore = defineStore("config", () => {
 	const helpdeskName: ComputedRef<string> = computed(
 		() => config.value.helpdesk_name || DEFAULT_TITLE
 	);
-	const suppressEmailToast: ComputedRef<boolean> = computed(
-		() => config.value.suppress_default_email_toast ?? true
+	const isSetupComplete: ComputedRef<boolean> = computed(
+		() => config.value.is_setup_complete
+	);
+	const skipEmailWorkflow: ComputedRef<string> = computed(
+		() => config.value.skip_email_workflow
 	);
 	const pageTitle = ref(null);
 	const windowTitle = computed(() =>
 		pageTitle.value
-			? `${pageTitle.value} | ${helpdeskName.value}`
+			? `${pageTitle.value} • ${helpdeskName.value}`
 			: helpdeskName.value
 	);
 
@@ -40,11 +43,11 @@ export const useConfigStore = defineStore("config", () => {
 	socket.on("helpdesk:settings-updated", () => configRes.reload());
 
 	return {
-		config,
 		brandLogo,
+		config,
 		helpdeskName,
-		suppressEmailToast,
-
+		isSetupComplete,
 		setTitle,
+		skipEmailWorkflow,
 	};
 });

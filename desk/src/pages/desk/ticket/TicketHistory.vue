@@ -5,10 +5,10 @@
 			<Button
 				appearance="minimal"
 				icon="x"
-				@click="sidebar.isVisible = false"
+				@click="sidebar.isExpanded = false"
 			/>
 		</div>
-		<div class="overflow-scroll px-4">
+		<div class="overflow-auto px-4">
 			<ol class="relative border-l border-gray-200 text-base">
 				<li
 					v-for="activity in activities"
@@ -34,7 +34,7 @@
 import { computed, ComputedRef } from "vue";
 import { Button, createListResource, Tooltip } from "frappe-ui";
 import dayjs from "dayjs";
-import { sidebar, ticket } from "./data";
+import { useTicketStore } from "./data";
 import IconDot from "~icons/ph/dot-bold";
 
 class Activity {
@@ -58,6 +58,8 @@ class Activity {
 		return this.dayjsInstance.fromNow();
 	}
 }
+
+const { sidebar, ticket } = useTicketStore();
 
 const r = createListResource({
 	doctype: "HD Ticket Activity",

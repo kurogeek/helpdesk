@@ -1,33 +1,54 @@
 <template>
-	<div ref="listElement" class="flex flex-col items-center overflow-scroll">
-		<div class="content flex flex-col gap-4">
-			<div v-for="(c, i) in conversations" :key="c.name" class="mt-4">
-				<div v-if="isNewDay(i)">
-					<div class="flex items-center">
-						<div class="bg h-0.5 grow rounded-full bg-gray-100"></div>
-						<div class="my-2 ml-5 grow-0 text-sm text-gray-800">
-							{{ dayShort(c.creation) }}
+	<div class="flex flex-col overflow-hidden">
+		<div
+			v-if="isLoaded"
+			ref="listElement"
+			class="flex w-full flex-col items-center gap-4 overflow-auto"
+		>
+			<div class="content">
+				<div v-for="(c, i) in conversations" :key="c.name" class="mt-4">
+					<div v-if="isNewDay(i)">
+						<div class="my-4 border-t text-center">
+							<div class="-translate-y-1/2">
+								<span class="bg-white px-2 text-xs text-gray-700">
+									{{ dayShort(c.creation) }}
+								</span>
+							</div>
 						</div>
 					</div>
+					<CommunicationItem
+						v-if="c.isCommunication"
+						:content="c.content"
+						:date="c.creation"
+						:sender="c.sender.full_name"
+						:sender-image="c.sender.image"
+						:cc="c.cc"
+						:bcc="c.bcc"
+						:attachments="c.attachments"
+					>
+						<template #extra="{ content, cc, bcc }">
+							<Dropdown :options="dropdownOptions(content, cc, bcc)">
+								<template #default>
+									<FeatherIcon
+										name="more-horizontal"
+										class="h-5 w-5 cursor-pointer opacity-0 group-hover:opacity-100"
+									/>
+								</template>
+							</Dropdown>
+						</template>
+					</CommunicationItem>
+					<CommentItem
+						v-else
+						:name="c.name"
+						:content="c.content"
+						:date="c.creation"
+						:sender="c.sender"
+					/>
 				</div>
-				<CommunicationItem
-					v-if="c.isCommunication"
-					:content="c.content"
-					:date="c.creation"
-					:sender="c.sender.full_name"
-					:sender-image="c.sender.image"
-					:cc="c.cc"
-					:bcc="c.bcc"
-					:attachments="c.attachments"
-				/>
-				<CommentItem
-					v-else
-					:name="c.name"
-					:content="c.content"
-					:date="c.creation"
-					:sender="c.sender"
-				/>
 			</div>
+		</div>
+		<div v-else class="flex grow items-center justify-center">
+			<LoadingIndicator class="w-5 text-gray-900" />
 		</div>
 	</div>
 </template>
@@ -35,25 +56,20 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
 import { useScroll } from "@vueuse/core";
+import { debounce, Dropdown, FeatherIcon, LoadingIndicator } from "frappe-ui";
 import dayjs from "dayjs";
 import { orderBy, unionBy } from "lodash";
 import { socket } from "@/socket";
-import { ticket } from "./data";
+import { useTicketStore } from "./data";
+import CommunicationItem from "@/components/CommunicationItem.vue";
 import CommentItem from "./CommentItem.vue";
-import CommunicationItem from "./CommunicationItem.vue";
 
 type SocketData = {
 	ticket_id: string;
 };
 
-ticket.getCommunications
-	.submit()
-	.then(() => (isCommunicationsLoaded.value = true));
-ticket.getComments.submit().then(() => (isCommentsLoaded.value = true));
-
-const listElement = ref<HTMLElement | null>(null);
-const { y: scrollY } = useScroll(listElement, { behavior: "smooth" });
-
+const { editor, ticket } = useTicketStore();
+const listElement = ref(null);
 const isCommunicationsLoaded = ref(false);
 const isCommentsLoaded = ref(false);
 const isLoaded = computed(
@@ -61,8 +77,17 @@ const isLoaded = computed(
 );
 
 watch(isLoaded, (v) => {
-	if (v) scrollToBottom();
+	if (v) scrollBottom();
 });
+watch(
+	() => editor.isExpanded,
+	() => scrollBottom()
+);
+
+ticket.getCommunications
+	.submit()
+	.then(() => (isCommunicationsLoaded.value = true));
+ticket.getComments.submit().then(() => (isCommentsLoaded.value = true));
 
 const ticketId = computed(() => ticket.doc.name);
 const communications = computed(
@@ -75,15 +100,39 @@ const conversations = computed(() =>
 	)
 );
 
+function dropdownOptions(content: string, cc: string, bcc: string) {
+	return [
+		{
+			label: "Reply",
+			handler: () => {
+				editor.cc = [];
+				editor.bcc = [];
+				editor.content = quote(content);
+				editor.isExpanded = true;
+			},
+		},
+		{
+			label: "Reply All",
+			handler: () => {
+				editor.cc = cc.split(",");
+				editor.bcc = bcc.split(",");
+				editor.content = quote(content);
+				editor.isExpanded = true;
+			},
+		},
+	];
+}
+
+const scrollBottom = debounce(() => {
+	const { y } = useScroll(listElement, { behavior: "smooth" });
+	y.value = listElement.value.scrollHeight;
+}, 500);
+
 function mapCommunication(c) {
 	return {
 		...c,
 		isCommunication: true,
 	};
-}
-
-function scrollToBottom() {
-	scrollY.value = listElement.value.scrollHeight;
 }
 
 function isNewDay(index: number) {
@@ -106,14 +155,18 @@ function dayShort(date: string) {
 	}
 }
 
+function quote(s: string) {
+	return `<blockquote>${s}</blockquote><br/>`;
+}
+
 socket.on("helpdesk:new-communication", (data: SocketData) => {
 	if (data.ticket_id !== ticketId.value) return;
-	ticket.getCommunications.reload().then(() => scrollToBottom());
+	ticket.getCommunications.reload().then(() => scrollBottom());
 });
 
 socket.on("helpdesk:new-ticket-comment", (data: SocketData) => {
 	if (data.ticket_id !== ticketId.value) return;
-	ticket.getComments.reload().then(() => scrollToBottom());
+	ticket.getComments.reload().then(() => scrollBottom());
 });
 
 socket.on("helpdesk:delete-ticket-comment", (data: SocketData) => {

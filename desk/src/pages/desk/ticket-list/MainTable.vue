@@ -1,211 +1,211 @@
 <template>
-	<div class="overflow-x-scroll">
-		<div class="flex w-max min-w-full flex-col">
-			<div
-				class="sticky top-0 z-50 flex items-center gap-2 border-y border-gray-200 bg-white px-9 py-1.5 text-sm text-gray-600"
-			>
-				<Input
-					type="checkbox"
-					input-class="cursor-pointer"
-					class="mr-1"
-					:value="allSelected"
-					:onchange="(e) => toggleAllSelected(e.target.checked)"
-				/>
-				<div ref="subjectCol" class="col-subject grow">Subject</div>
-				<div class="w-24">Status</div>
-				<div class="w-24">Priority</div>
-				<div class="w-20">Type</div>
-				<div class="w-40">Assignee</div>
-				<div v-if="columns['Due in']" class="w-24">Due in</div>
-				<div v-if="columns['Created on']" class="w-36">Created on</div>
-				<div v-if="columns['Last modified']" class="w-36">Last modified</div>
-				<div v-if="columns['Source']" class="w-20">Source</div>
-				<ColumnSelector class="ml-auto" />
-			</div>
-			<div class="divide-y px-6 text-base">
-				<div
-					v-for="t in tickets.list.data"
-					:key="t.name"
-					class="flex h-11 w-full items-center gap-2 px-3 py-2 transition-all"
-					:class="{
-						'bg-gray-200': selected.has(t.name),
-						'hover:bg-gray-300': selected.has(t.name),
-						'hover:bg-gray-100': !selected.has(t.name),
-					}"
-				>
-					<Input
-						type="checkbox"
-						class="mr-1 cursor-pointer"
-						:value="selected.has(t.name)"
-						@click="() => toggleOne(t.name)"
-					/>
-					<TicketSummary class="col-subject grow" :ticket-name="t.name" />
-					<div class="w-24">
-						<Dropdown :options="statusDropdownOptions(t.name, t.status)">
-							<template #default="{ open }">
-								<div
-									class="flex cursor-pointer select-none items-center gap-1 text-gray-700"
-								>
-									{{ t.status }}
-									<IconCaretDown v-if="!open" class="h-3 w-3" />
-									<IconCaretUp v-if="open" class="h-3 w-3" />
-								</div>
-							</template>
-						</Dropdown>
-					</div>
-					<div class="w-24">
-						<Dropdown :options="priorityDropdownOptions(t.name, t.priority)">
-							<template #default="{ open }">
-								<div
-									class="flex cursor-pointer select-none items-center gap-1 text-gray-700"
-								>
-									{{ t.priority }}
-									<IconCaretDown v-if="!open" class="h-3 w-3" />
-									<IconCaretUp v-if="open" class="h-3 w-3" />
-								</div>
-							</template>
-						</Dropdown>
-					</div>
-					<div class="line-clamp-1 w-20 text-gray-700">
-						{{ t.ticket_type || "--" }}
-					</div>
-					<div class="w-40">
-						<AssignedInfo :ticket-id="t.name" />
-					</div>
-					<div
-						v-if="columns['Due in']"
-						class="line-clamp-1 w-24 text-gray-700"
-						:class="{
-							'text-red-700': Date.parse(t.resolution_by) < Date.now(),
-						}"
-					>
-						{{ t.resolution_by ? dayjs(t.resolution_by).fromNow() : "--" }}
-					</div>
-					<div
-						v-if="columns['Created on']"
-						class="line-clamp-1 w-36 text-gray-700"
-					>
-						{{ dayjs(t.creation).format(dateFormat) }}
-					</div>
-					<div
-						v-if="columns['Last modified']"
-						class="line-clamp-1 w-36 text-gray-700"
-					>
-						{{ dayjs(t.modified).format(dateFormat) }}
-					</div>
-					<div v-if="columns['Source']" class="line-clamp-1 w-20 text-gray-700">
-						{{ t.via_customer_portal ? "Customer Portal" : "EMail" }}
-					</div>
-					<Dropdown
-						:options="[
-							{
-								label: 'Copy link',
-								handler() {
-									copyTicketLink(t.name);
-								},
-							},
-						]"
-					>
-						<template #default="{ open }">
-							<IconDotHorizontal
-								class="h-4 w-4 cursor-pointer text-gray-500"
-								:class="{
-									'text-gray-700': open,
-								}"
-							/>
-						</template>
-					</Dropdown>
-				</div>
-			</div>
-		</div>
-	</div>
+  <HelpdeskTable :columns="columns" :data="tickets.list.data" row-key="name">
+    <template #subject="{ data }">
+      <TicketSummary class="col-subject" :ticket-name="data.name" />
+    </template>
+    <template #status="{ data }">
+      <Dropdown :options="statusDropdownOptions(data.name, data.status)">
+        <template #default="{ open }">
+          <div class="flex cursor-pointer select-none items-center gap-1">
+            <div class="line-clamp-1">
+              {{ data.status }}
+            </div>
+            <IconCaretDown v-if="!open" class="h-3 w-3" />
+            <IconCaretUp v-if="open" class="h-3 w-3" />
+          </div>
+        </template>
+      </Dropdown>
+    </template>
+    <template #priority="{ data }">
+      <Dropdown :options="priorityDropdownOptions(data.name, data.priority)">
+        <template #default="{ open }">
+          <div class="flex cursor-pointer select-none items-center gap-1">
+            <div class="line-clamp-1">
+              {{ data.priority }}
+            </div>
+            <IconCaretDown v-if="!open" class="h-3 w-3" />
+            <IconCaretUp v-if="open" class="h-3 w-3" />
+          </div>
+        </template>
+      </Dropdown>
+    </template>
+    <template #resolution_by="{ data }">
+      <div
+        :class="{
+          'text-red-700': Date.parse(data.resolution_by) < Date.now(),
+        }"
+      >
+        {{ data.resolution_by ? dayjs(data.resolution_by).fromNow() : "--" }}
+      </div>
+    </template>
+    <template #creation="{ data }">
+      {{ dayjs(data.creation).format(dateFormat) }}
+    </template>
+    <template #modified="{ data }">
+      {{ dayjs(data.modified).format(dateFormat) }}
+    </template>
+    <template #via_customer_portal="{ data }">
+      {{ data.via_customer_portal ? "Customer Portal" : "Email" }}
+    </template>
+    <template #row-extra="{ data }">
+      <AssignedInfo :ticket-id="data.name" />
+    </template>
+    <template #actions="{ selection }">
+      <Dropdown :options="assignOpts(selection as Set<number>)">
+        <template #default>
+          <Button
+            class="flex cursor-pointer items-center gap-1 text-gray-700"
+            label="Assign"
+            icon-left="plus-circle"
+            appearance="minimal"
+          />
+        </template>
+      </Dropdown>
+    </template>
+  </HelpdeskTable>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { useRouter } from "vue-router";
-import { useClipboard } from "@vueuse/core";
-import { Dropdown } from "frappe-ui";
+import { createResource, Dropdown } from "frappe-ui";
 import dayjs from "dayjs";
-import { AGENT_PORTAL_TICKET } from "@/router";
+import { useAgentStore } from "@/stores/agent";
 import { useTicketStatusStore } from "@/stores/ticketStatus";
 import { useTicketPriorityStore } from "@/stores/ticketPriority";
+import HelpdeskTable from "@/components/HelpdeskTable.vue";
 import { createToast } from "@/utils/toasts";
 import { useTicketListStore } from "./data";
 import AssignedInfo from "./AssignedInfo.vue";
 import TicketSummary from "./TicketSummary.vue";
-import ColumnSelector from "./ColumnSelector.vue";
 import IconCaretDown from "~icons/ph/caret-down";
 import IconCaretUp from "~icons/ph/caret-up";
-import IconDotHorizontal from "~icons/espresso/dot-horizontal";
 
-const router = useRouter();
-const { copy } = useClipboard();
+const agentStore = useAgentStore();
 const ticketPriorityStore = useTicketPriorityStore();
 const ticketStatusStore = useTicketStatusStore();
-const { selected, tickets, toggleOne, selectAll, deselectAll, columns } =
-	useTicketListStore();
+const { tickets } = useTicketListStore();
 
 const dateFormat = "D/M/YYYY h:mm A";
-const allSelected = computed(() => {
-	return tickets.list?.data?.length === selected.size;
+const columns = [
+  {
+    title: "Subject",
+    isTogglable: false,
+    colKey: "subject",
+    colClass: "col-subject",
+  },
+  {
+    title: "Status",
+    isTogglable: false,
+    colKey: "status",
+    colClass: "w-24",
+  },
+  {
+    title: "Priority",
+    isTogglable: false,
+    colKey: "priority",
+    colClass: "w-24",
+  },
+  {
+    title: "Type",
+    isTogglable: false,
+    colKey: "ticket_type",
+    colClass: "w-20",
+  },
+  {
+    title: "Contact",
+    isTogglable: false,
+    colKey: "contact",
+    colClass: "w-40",
+  },
+  {
+    title: "Due in",
+    isTogglable: false,
+    colKey: "resolution_by",
+    colClass: "w-24",
+  },
+  {
+    title: "Customer",
+    isTogglable: true,
+    colKey: "customer",
+    colClass: "w-40",
+  },
+  {
+    title: "Created on",
+    isTogglable: true,
+    colKey: "creation",
+    colClass: "w-36",
+  },
+  {
+    title: "Last modified",
+    isTogglable: true,
+    colKey: "modified",
+    colClass: "w-36",
+  },
+  {
+    title: "Source",
+    isTogglable: true,
+    colKey: "via_customer_portal",
+    colClass: "w-20",
+  },
+];
+
+const bulkAssignTicketToAgent = createResource({
+  url: "helpdesk.api.ticket.bulk_assign_ticket_to_agent",
+  onSuccess: () => {
+    createToast({
+      title: "Tickets assigned to agent",
+      icon: "check",
+      iconClasses: "text-green-500",
+    });
+  },
+  onError: () => {
+    createToast({
+      title: "Unable to assign tickets to agent.",
+      icon: "x",
+      iconClasses: "text-red-500",
+    });
+  },
 });
 
-function toggleAllSelected(checked: boolean) {
-	if (checked) selectAll();
-	else deselectAll();
+function assignOpts(selected: Set<number>) {
+  return agentStore.options.map((a) => ({
+    label: a.agent_name,
+    handler: () =>
+      bulkAssignTicketToAgent.submit({
+        ticket_ids: Array.from(selected),
+        agent_id: a.name,
+      }),
+  }));
 }
 
 function statusDropdownOptions(ticketId: number, currentStatus: string) {
-	return ticketStatusStore.options
-		.filter((o) => o !== currentStatus)
-		.map((o) => ({
-			label: o,
-			handler: () =>
-				tickets.setValue.submit({
-					name: ticketId,
-					status: o,
-				}),
-		}));
+  return ticketStatusStore.options
+    .filter((o) => o !== currentStatus)
+    .map((o) => ({
+      label: o,
+      handler: () =>
+        tickets.setValue.submit({
+          name: ticketId,
+          status: o,
+        }),
+    }));
 }
 
 function priorityDropdownOptions(ticketId: number, currentPriority: string) {
-	return ticketPriorityStore.names
-		.filter((o) => o !== currentPriority)
-		.map((o) => ({
-			label: o,
-			handler: () =>
-				tickets.setValue.submit({
-					name: ticketId,
-					priority: o,
-				}),
-		}));
-}
-
-async function copyTicketLink(name: number) {
-	const loc = router.resolve({
-		name: AGENT_PORTAL_TICKET,
-		params: {
-			ticketId: name,
-		},
-	});
-
-	const base = window.location.protocol + "//" + window.location.host;
-	const full = base + loc.href;
-
-	await copy(full);
-
-	createToast({
-		title: "Link copied to clipboard",
-		icon: "check",
-		iconClasses: "text-green-600",
-	});
+  return ticketPriorityStore.names
+    .filter((o) => o !== currentPriority)
+    .map((o) => ({
+      label: o,
+      handler: () =>
+        tickets.setValue.submit({
+          name: ticketId,
+          priority: o,
+        }),
+    }));
 }
 </script>
 
 <style scoped>
-.col-subject {
-	min-width: 420px;
-	max-width: 600px;
+:deep(.col-subject) {
+  width: 480px;
 }
 </style>

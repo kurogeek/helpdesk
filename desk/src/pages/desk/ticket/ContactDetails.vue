@@ -6,7 +6,7 @@
 				<Button
 					appearance="minimal"
 					icon="x"
-					@click="sidebar.isVisible = false"
+					@click="sidebar.isExpanded = false"
 				/>
 			</div>
 			<div class="flex items-center gap-3 border-b py-6">
@@ -25,7 +25,7 @@
 				</div>
 			</div>
 		</div>
-		<div class="overflow-scroll px-4">
+		<div class="overflow-auto px-4">
 			<div
 				v-if="!isEmpty(contactOptions)"
 				class="flex flex-col gap-3.5 border-b py-6 text-base"
@@ -51,10 +51,12 @@
 import { isEmpty } from "lodash";
 import { computed } from "vue";
 import { Avatar, Button, createDocumentResource } from "frappe-ui";
-import { sidebar, ticket } from "./data";
+import { useTicketStore } from "./data";
 import CustomFieldList from "./CustomFieldList.vue";
 import OpenTicketList from "./OpenTicketList.vue";
 import IconEmail from "~icons/espresso/email";
+
+const { sidebar, ticket } = useTicketStore();
 
 const c = createDocumentResource({
 	doctype: "Contact",

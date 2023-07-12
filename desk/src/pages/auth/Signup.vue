@@ -4,49 +4,45 @@
 			<form class="space-y-4" @submit.prevent="signup()">
 				<Input
 					v-model="email"
-					label="Email"
 					type="email"
-					placeholder="johndoe@mail.com"
+					placeholder="john.doe@example.com"
+					label="Email"
 					autocomplete="email"
 					required
 				/>
 				<Input
 					v-model="firstName"
-					label="First Name"
 					type="text"
+					label="Firstname"
 					placeholder="John"
 					required
 				/>
 				<Input
 					v-model="lastName"
-					label="Last Name"
 					type="text"
+					label="Lastname"
 					placeholder="Doe"
 					required
 				/>
 				<div>
 					<Button
-						appearance="primary"
-						class="mt-4 w-full"
+						class="w-full bg-gray-900 text-white hover:bg-gray-800"
+						label="Signup"
 						:loading="submitting"
 						type="primary"
-					>
-						Submit
-					</Button>
+					/>
 				</div>
 				<div>
 					<div class="mt-10 border-t text-center">
 						<div class="-translate-y-1/2">
-							<span
-								class="bg-white px-2 text-xs uppercase leading-8 tracking-wider text-gray-800"
-							>
-								Or
+							<span class="bg-white px-2 text-xs tracking-wider text-gray-700">
+								OR
 							</span>
 						</div>
 					</div>
 				</div>
 				<router-link class="text-center text-base" :to="{ name: 'Login' }">
-					<div>Already have an account? Log in.</div>
+					<div>Already have an account? Login</div>
 				</router-link>
 			</form>
 		</div>
