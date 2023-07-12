@@ -10,16 +10,17 @@ def delete_all_hd_customer():
         hd_customer.delete()
         frappe.db.commit()
 
-def create_hd_customer_from_customer():
+def create_hd_customers_from_all_customers():
     
     for c in frappe.get_list("Customer"):
         customer = frappe.get_doc("Customer", c.name)
-        new_hd_customer = frappe.new_doc("HD Customer")
-        new_hd_customer.customer_name = customer.name
-        new_hd_customer.domain = customer.territory
-        new_hd_customer.woocommerce_email = customer.woocommerce_email
-        new_hd_customer.erp_customer = customer.name
+        create_hd_customer_from_customer(customer)
 
-        new_hd_customer.insert(ignore_permissions=True)
-
-        frappe.db.commit()
+def create_hd_customer_from_customer(customer):
+    new_hd_customer = frappe.new_doc("HD Customer")
+    new_hd_customer.customer_name = customer.name
+    new_hd_customer.domain = customer.territory
+    new_hd_customer.woocommerce_email = customer.woocommerce_email
+    new_hd_customer.erp_customer = customer.name
+    new_hd_customer.insert(ignore_permissions=True)
+    frappe.db.commit()
