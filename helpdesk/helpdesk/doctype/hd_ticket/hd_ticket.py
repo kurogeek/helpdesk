@@ -2,13 +2,13 @@ from __future__ import unicode_literals
 
 import json
 from datetime import timedelta
-from typing import List
+from email.utils import parseaddr
 from functools import lru_cache
+from typing import List
 
 import frappe
 from frappe import _
 from frappe.core.utils import get_parent_doc
-from frappe.database.database import Criterion, Query
 from frappe.desk.form.assign_to import add as assign
 from frappe.desk.form.assign_to import clear as clear_all_assignments
 from frappe.email.inbox import link_communication_to_document
@@ -18,7 +18,10 @@ from frappe.query_builder import Case, DocType, Order
 from frappe.query_builder.functions import Count
 from frappe.utils import date_diff, get_datetime, now_datetime, time_diff_in_seconds
 from frappe.utils.user import is_website_user
+from pypika.queries import Query
+from pypika.terms import Criterion
 
+from helpdesk.consts import FALLBACK_TICKET_TYPE
 from helpdesk.helpdesk.doctype.hd_ticket_activity.hd_ticket_activity import (
 	log_ticket_activity,
 )
@@ -26,21 +29,55 @@ from helpdesk.helpdesk.utils.email import (
 	default_outgoing_email_account,
 	default_ticket_outgoing_email_account,
 )
-from helpdesk.utils import publish_event, capture_event
+from helpdesk.utils import capture_event, is_agent, publish_event
 
 
 class HDTicket(Document):
 	@staticmethod
-	def get_list_query(query: Query):
+	def get_list_select(query: Query):
 		QBTicket = frappe.qb.DocType("HD Ticket")
+		QBComment = frappe.qb.DocType("HD Ticket Comment")
+		QBCommunication = frappe.qb.DocType("Communication")
 
-		query = HDTicket.filter_by_team(query)
-		query = query.select(QBTicket.star)
+		count_comment = (
+			frappe.qb.from_(QBComment)
+			.select(Count("*"))
+			.as_("count_comment")
+			.where(QBComment.reference_ticket == QBTicket.name)
+		)
+
+		count_communication = (
+			frappe.qb.from_(QBCommunication)
+			.select(Count("*"))
+			.as_("count_communication")
+			.where(QBCommunication.reference_doctype == "HD Ticket")
+			.where(QBCommunication.reference_name == QBTicket.name)
+		)
+
+		query = (
+			query.select(QBTicket.star)
+			.select(count_comment)
+			.select(count_communication)
+		)
 
 		return query
 
 	@staticmethod
-	def filter_by_team(query: Query):
+	def get_list_filters(query: Query):
+		if is_agent():
+			return HDTicket.get_agent_list_filters(query)
+
+		return HDTicket.get_customer_list_filters(query)
+
+	@staticmethod
+	def get_customer_list_filters(query: Query):
+		QBTicket = frappe.qb.DocType("HD Ticket")
+		user = frappe.session.user
+		query = query.where(QBTicket.raised_by == user)
+		return query
+
+	@staticmethod
+	def get_agent_list_filters(query: Query):
 		user = frappe.session.user
 
 		if HDTicket.can_ignore_restrictions(user):
@@ -120,15 +157,14 @@ class HDTicket(Document):
 	def get_feed(self):
 		return "{0}: {1}".format(_(self.status), self.subject)
 
+	def before_validate(self):
+		self.set_ticket_type()
+		self.set_raised_by()
+		self.set_contact()
+		self.set_priority()
+
 	def validate(self):
-		if not self.raised_by:
-			self.raised_by = frappe.session.user
-
-		self.set_contact(self.raised_by)
-
-	def before_insert(self):
-		self.verify_ticket_type()
-		self.update_priority_based_on_ticket_type()
+		self.validate_ticket_type()
 
 	def after_insert(self):
 		log_ticket_activity(self.name, "created")
@@ -138,6 +174,35 @@ class HDTicket(Document):
 		self.handle_ticket_activity_update()
 		self.remove_assignment_if_not_in_team()
 		self.publish_update()
+
+	def set_ticket_type(self):
+		if self.ticket_type:
+			return
+		settings = frappe.get_doc("HD Settings")
+		ticket_type = settings.default_ticket_type or FALLBACK_TICKET_TYPE
+		self.ticket_type = ticket_type
+
+	def set_raised_by(self):
+		self.raised_by = self.raised_by or frappe.session.user
+
+	def set_contact(self):
+		email_id = parseaddr(self.raised_by)[1]
+		if email_id:
+			if not self.contact:
+				contact = frappe.db.get_value("Contact", {"email_id": email_id})
+				if contact:
+					self.contact = contact
+
+	def set_priority(self):
+		if self.priority or not self.ticket_type:
+			return
+		ticket_type = frappe.get_doc("HD Ticket Type", self.ticket_type)
+		self.priority = ticket_type.priority
+
+	def validate_ticket_type(self):
+		settings = frappe.get_doc("HD Settings")
+		if settings.is_ticket_type_mandatory and not self.ticket_type:
+			frappe.throw(_("Ticket type is mandatory"))
 
 	def handle_ticket_activity_update(self):
 		"""
@@ -183,24 +248,6 @@ class HDTicket(Document):
 					{"ticket_id": self.name},
 					after_commit=True,
 				)
-
-	def update_priority_based_on_ticket_type(self):
-		if self.ticket_type:
-			ticket_type_doc = frappe.get_doc("HD Ticket Type", self.ticket_type)
-			if ticket_type_doc.priority:
-				self.priority = ticket_type_doc.priority
-
-	def set_contact(self, email_id, save=False):
-		import email.utils
-
-		email_id = email.utils.parseaddr(email_id)[1]
-		if email_id:
-			if not self.contact:
-				contact = frappe.db.get_value("Contact", {"email_id": email_id})
-				if contact:
-					self.contact = contact
-					if save:
-						self.save()
 
 	def create_communication(self):
 		communication = frappe.new_doc("Communication")
@@ -286,6 +333,9 @@ class HDTicket(Document):
 
 	@frappe.whitelist()
 	def assign_agent(self, agent):
+		if not agent:
+			return
+
 		if self._assign:
 			assignees = json.loads(self._assign)
 			for assignee in assignees:
@@ -312,19 +362,6 @@ class HDTicket(Document):
 		activities = frappe.db.get_all("HD Ticket Activity", {"ticket": self.name})
 		for activity in activities:
 			frappe.db.delete("HD Ticket Activity", activity)
-
-	def verify_ticket_type(self):
-		if self.ticket_type:
-			return
-
-		settings = frappe.get_doc("HD Settings")
-		self.ticket_type = settings.default_ticket_type
-
-		if not settings.is_ticket_type_mandatory:
-			return
-
-		if not self.ticket_type:
-			frappe.throw(_("Ticket type is mandatory"))
 
 	def skip_email_workflow(self):
 		skip: str = frappe.get_value("HD Settings", None, "skip_email_workflow") or "0"
@@ -534,45 +571,6 @@ class HDTicket(Document):
 	def mark_seen(self):
 		self.add_seen()
 
-	def get_comment_count(self):
-		QBComment = DocType("HD Ticket Comment")
-
-		count = Count("*").as_("count")
-		res = (
-			frappe.qb.from_(QBComment)
-			.select(count)
-			.where(QBComment.reference_ticket == self.name)
-			.run(as_dict=True)
-		)
-
-		return res.pop().count
-
-	def get_conversation_count(self):
-		QBCommunication = DocType("Communication")
-
-		count = Count("*").as_("count")
-		res = (
-			frappe.qb.from_(QBCommunication)
-			.select(count)
-			.where(QBCommunication.reference_doctype == "HD Ticket")
-			.where(QBCommunication.reference_name == self.name)
-			.run(as_dict=True)
-		)
-
-		return res.pop().count
-
-	def is_seen(self):
-		seen = self._seen or ""
-		return frappe.session.user in seen
-
-	@frappe.whitelist()
-	def get_meta(self):
-		return {
-			"comment_count": self.get_comment_count(),
-			"conversation_count": self.get_conversation_count(),
-			"is_seen": self.is_seen(),
-		}
-
 	@frappe.whitelist()
 	def get_assignees(self):
 		QBUser = DocType("User")
@@ -660,10 +658,58 @@ class HDTicket(Document):
 
 		return l
 
+	def get_escalation_rule(self):
+		filters = [
+			{
+				"priority": self.priority,
+				"team": self.agent_group,
+				"ticket_type": self.ticket_type,
+			},
+			{
+				"priority": self.priority,
+				"team": self.agent_group,
+			},
+			{
+				"priority": self.priority,
+				"ticket_type": self.ticket_type,
+			},
+			{
+				"team": self.agent_group,
+				"ticket_type": self.ticket_type,
+			},
+			{
+				"priority": self.priority,
+			},
+			{
+				"team": self.agent_group,
+			},
+			{
+				"ticket_type": self.ticket_type,
+			},
+		]
+
+		for i in range(len(filters)):
+			try:
+				f = {
+					**filters[i],
+					"is_enabled": True,
+				}
+				rule = frappe.get_last_doc("HD Escalation Rule", filters=f)
+				if rule:
+					return rule
+			except:
+				pass
+
 	@frappe.whitelist()
 	def reopen(self):
 		if self.status != "Resolved":
 			frappe.throw(_("Only resolved tickets can be reopened"))
+
+		if escalation_rule := self.get_escalation_rule():
+			self.agent_group = escalation_rule.to_team or self.agent_group
+			self.priority = escalation_rule.to_priority or self.priority
+			self.ticket_type = escalation_rule.to_ticket_type or self.ticket_type
+			self.assign_agent(escalation_rule.to_agent)
 
 		self.status = "Open"
 		self.save()

@@ -1,6 +1,13 @@
 <template>
   <div class="w-full overflow-hidden overflow-x-auto">
     <div
+      v-if="isEmpty(data)"
+      class="flex h-full w-full items-center justify-center text-base text-gray-700"
+    >
+      {{ emptyMessage }}
+    </div>
+    <div
+      v-else
       class="flex h-full w-max min-w-full flex-col overflow-y-hidden text-gray-700"
     >
       <div
@@ -42,9 +49,9 @@
                     class="flex items-center justify-between"
                   >
                     {{ column.title }}
-                    <MinimalSwitch
-                      :enabled="isColVisible(column)"
-                      @click="toggleColumn(column)"
+                    <Switch
+                      v-model="togglableColumns[column.colKey]"
+                      size="md"
                     />
                   </div>
                 </div>
@@ -57,7 +64,7 @@
         <div
           v-for="row in data"
           :key="row[rowKey]"
-          class="flex h-11 w-full items-center gap-2 px-3 py-2 transition"
+          class="group flex h-11 w-full items-center gap-2 px-3 py-2 transition"
           :class="{
             'bg-gray-200': selection.has(row[rowKey]),
             'hover:bg-gray-300': selection.has(row[rowKey]),
@@ -81,7 +88,7 @@
           >
             <slot v-if="isColVisible(column)" :name="column.colKey" :data="row">
               <div class="line-clamp-1">
-                {{ row[column.colKey] }}
+                {{ row[column.colKey] || "—" }}
               </div>
             </slot>
           </div>
@@ -100,7 +107,7 @@
       leave-to-class="transform opacity-0"
     >
       <div
-        v-show="selection.size"
+        v-if="selection.size"
         class="fixed inset-x-0 bottom-5 mx-auto w-max text-base"
       >
         <div
@@ -125,8 +132,8 @@
           <div class="text-gray-300">&#x007C;</div>
           <Button
             class="text-gray-700"
-            appearance="minimal"
             :disabled="allSelected"
+            variant="ghost"
             @click="toggleAllRows(true)"
           >
             Select all
@@ -143,9 +150,9 @@
 </template>
 
 <script setup lang="ts">
-import { Ref, computed, reactive, ref, toRefs, useSlots } from "vue";
-import { FeatherIcon, Popover } from "frappe-ui";
-import MinimalSwitch from "@/components/MinimalSwitch.vue";
+import { computed, reactive, toRefs, useSlots } from "vue";
+import { FeatherIcon, Popover, Switch } from "frappe-ui";
+import { isEmpty } from "lodash";
 import IconAdd from "~icons/espresso/add";
 
 type Column = {
@@ -171,6 +178,11 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  selection: {
+    type: Set<SelectionKey>,
+    required: false,
+    default: () => new Set(),
+  },
   emitRowClick: {
     type: Boolean,
     required: false,
@@ -186,15 +198,20 @@ const props = defineProps({
     required: false,
     default: false,
   },
+  emptyMessage: {
+    type: String,
+    required: false,
+    default: "🙇 Such empty",
+  },
 });
 
-const emits = defineEmits<{
-  (event: "row-click", key): void;
+const emit = defineEmits<{
+  (event: "row-click", key: SelectionKey): void;
+  (event: "update:selection", selection: Set<SelectionKey>): void;
 }>();
 
-const { columns, data, emitRowClick, rowKey } = toRefs(props);
+const { columns, data, emitRowClick, rowKey, selection } = toRefs(props);
 const slots = useSlots();
-const selection: Ref<Set<SelectionKey>> = ref(new Set([]));
 const allSelected = computed(() => selection.value.size === data.value.length);
 const togglableColumns = reactive(
   columns.value
@@ -214,27 +231,27 @@ function isColVisible(column: Column) {
   return !column.isTogglable || togglableColumns[column.colKey];
 }
 
-function toggleColumn(column: Column) {
-  togglableColumns[column.colKey] = !togglableColumns[column.colKey];
-}
-
 function toggleRow(row: RowKey) {
   if (!selection.value.delete(row)) {
     selection.value.add(row);
   }
+
+  emit("update:selection", selection.value);
 }
 
 function toggleAllRows(cond: boolean) {
   if (!cond || allSelected.value) {
     selection.value.clear();
+    emit("update:selection", selection.value);
     return;
   }
 
   data.value.forEach((d) => selection.value.add(d[rowKey.value]));
+  emit("update:selection", selection.value);
 }
 
 function onRowClick(row) {
-  if (emitRowClick.value) emits("row-click", row[rowKey.value]);
+  if (emitRowClick.value) emit("row-click", row[rowKey.value]);
 }
 </script>
 

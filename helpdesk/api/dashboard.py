@@ -1,21 +1,25 @@
 from datetime import datetime, timedelta
 
 import frappe
+from frappe.query_builder.functions import Count
+from frappe.utils.caching import redis_cache
 
 
 @frappe.whitelist()
 def get_all():
 	return [
-		ticket_statuses(),
 		avg_first_response_time(),
-		ticket_types(),
-		new_tickets(),
 		resolution_within_sla(),
+		my_tickets(),
+		ticket_statuses(),
+		new_tickets(),
+		ticket_types(),
 		ticket_activity(),
 		ticket_priority(),
 	]
 
 
+@redis_cache(ttl=60 * 5)
 def ticket_statuses():
 	thirty_days_ago = datetime.now() - timedelta(days=30)
 	filters = {"creation": [">=", thirty_days_ago.strftime("%Y-%m-%d")]}
@@ -35,6 +39,7 @@ def ticket_statuses():
 	}
 
 
+@redis_cache(ttl=60 * 5)
 def avg_first_response_time():
 	average_resolution_time = float(0.0)
 	thirty_days_ago = datetime.now() - timedelta(days=30)
@@ -59,12 +64,13 @@ def avg_first_response_time():
 		res = f"{h} Hours"
 
 	return {
-		"title": "Avg First Response Time",
+		"title": "Avg. first response time",
 		"is_chart": False,
 		"data": res,
 	}
 
 
+@redis_cache(ttl=60 * 5)
 def ticket_types():
 	thirty_days_ago = datetime.now() - timedelta(days=30)
 	filters = {"creation": [">=", thirty_days_ago.strftime("%Y-%m-%d")]}
@@ -84,6 +90,7 @@ def ticket_types():
 	}
 
 
+@redis_cache(ttl=60 * 5)
 def new_tickets():
 	thirty_days_ago = datetime.now() - timedelta(days=30)
 	filters = {"creation": [">=", thirty_days_ago.strftime("%Y-%m-%d")]}
@@ -97,13 +104,14 @@ def new_tickets():
 	)
 
 	return {
-		"title": "New Tickets",
+		"title": "New tickets",
 		"is_chart": True,
 		"chart_type": "Line",
 		"data": res,
 	}
 
 
+@redis_cache(ttl=60 * 5)
 def resolution_within_sla():
 	thirty_days_ago = datetime.now() - timedelta(days=30)
 	filters = {
@@ -132,12 +140,13 @@ def resolution_within_sla():
 		res = str(resolution_within_sla_percentage) + "%"
 
 	return {
-		"title": "Resolution Within SLA",
+		"title": "Resolution within SLA",
 		"is_chart": False,
 		"data": res,
 	}
 
 
+@redis_cache(ttl=60 * 5)
 def ticket_activity():
 	thirty_days_ago = datetime.now() - timedelta(days=30)
 	filters = {"creation": [">=", thirty_days_ago.strftime("%Y-%m-%d")]}
@@ -158,6 +167,7 @@ def ticket_activity():
 	}
 
 
+@redis_cache(ttl=60 * 5)
 def ticket_priority():
 	thirty_days_ago = datetime.now() - timedelta(days=30)
 	filters = {"creation": [">=", thirty_days_ago.strftime("%Y-%m-%d")]}
@@ -173,5 +183,33 @@ def ticket_priority():
 		"title": "Priority",
 		"is_chart": True,
 		"chart_type": "Pie",
+		"data": res,
+	}
+
+
+@redis_cache(ttl=60 * 5, user=True)
+def my_tickets():
+	QBTicket = frappe.qb.DocType("HD Ticket")
+	like_str = f"%{frappe.session.user}%"
+	like_query = QBTicket._assign.like(like_str)
+
+	res = (
+		frappe.qb.from_(QBTicket)
+		.select(Count(QBTicket.name, "count"))
+		.select(QBTicket.status)
+		.where(like_query)
+		.where(QBTicket.status.isin(["Open", "Replied"]))
+		.groupby(QBTicket.status)
+		.run(as_dict=True)
+	)
+
+	def map_row(row):
+		return f"{row['count']} {row['status']}"
+
+	res = " / ".join(map(map_row, res)).lower()
+
+	return {
+		"title": "My tickets",
+		"is_chart": False,
 		"data": res,
 	}
