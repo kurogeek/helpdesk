@@ -50,3 +50,4 @@ There are many ways you can contribute even if you don't code:
 ## License
 
 [GNU Affero General Public License v3.0](/licence.md)
+
